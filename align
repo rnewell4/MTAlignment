@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+from __future__ import division, print_function
+import argparse
+from itertools import islice
+import sys
+from tqdm import tqdm
+
+from model import DiceCoefficient, IBMModel1, IBMModel2
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-d", "--data", dest="train", default="data/hansards", help="Data filename prefix (default=data)")
+parser.add_argument("-e", "--english", dest="english", default="e", help="Suffix of English filename (default=e)")
+parser.add_argument("-f", "--french", dest="french", default="f", help="Suffix of French filename (default=f)")
+parser.add_argument("-t", "--threshold", dest="threshold", default=0.5, type=float, help="Threshold for aligning with Dice's coefficient (default=0.5)")
+parser.add_argument("-n", "--num_sentences", dest="num_sents", default=sys.maxsize, type=int, help="Number of sentences to use for training and alignment")
+parser.add_argument("-m", "--model", dest="model", choices='dice ibm-model-1 ibm-model-2'.split(), default='ibm-model-2', help="Model to use for alignment")
+parser.add_argument("-l", "--limit", dest="limit", default='1000', type=int, help="Alignment output line limit")
+parser.add_argument("-i", "--iterations", dest="iterations", default='10', type=int, help="Number of epochs to train the aligner")
+args = parser.parse_args()
+f_name = "{}.{}".format(args.train, args.french)
+e_name = "{}.{}".format(args.train, args.english)
+
+def bitextGen(desc='Bitext', total=args.num_sents):
+    with open(f_name) as f_data, open(e_name) as e_data:
+        yield from (map(lambda sentence: sentence.strip().split(), pair) for pair in tqdm(islice(zip(f_data, e_data), 0, total), desc=desc, total=total))
+
+
+def instantiateModel():
+	if args.model == 'dice':
+		return DiceCoefficient(args.threshold)
+	elif args.model == 'ibm-model-1':
+		return IBMModel1(args.iterations)
+	elif args.model == 'ibm-model-2':
+		return IBMModel2(args.iterations)
+
+model = instantiateModel()
+model.train(bitextGen)
+
+
+for frSent, enSent in bitextGen(desc='Aligning', total=args.limit):
+  print(
+    ' '.join(
+      '{i}-{j}'.format(i=i, j=j)
+      for i, j in model.align(enSent=enSent, frSent=frSent)
+    )
+  )
+
